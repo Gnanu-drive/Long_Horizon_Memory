@@ -20,9 +20,12 @@ from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
 
 try:
-    from ..models import LongHorizonMemoryAction, LongHorizonMemoryObservation
-except ImportError:
     from models import LongHorizonMemoryAction, LongHorizonMemoryObservation
+except (ImportError, ModuleNotFoundError):
+    try:
+        from ..models import LongHorizonMemoryAction, LongHorizonMemoryObservation
+    except (ImportError, ModuleNotFoundError):
+        from long_horizon_memory.models import LongHorizonMemoryAction, LongHorizonMemoryObservation
 
 
 class LongHorizonMemoryEnvironment(Environment):

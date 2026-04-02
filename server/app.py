@@ -36,11 +36,15 @@ except Exception as e:  # pragma: no cover
     ) from e
 
 try:
-    from ..models import LongHorizonMemoryAction, LongHorizonMemoryObservation
-    from .long_horizon_memory_environment import LongHorizonMemoryEnvironment
-except ModuleNotFoundError:
     from models import LongHorizonMemoryAction, LongHorizonMemoryObservation
     from server.long_horizon_memory_environment import LongHorizonMemoryEnvironment
+except (ImportError, ModuleNotFoundError):
+    try:
+        from ..models import LongHorizonMemoryAction, LongHorizonMemoryObservation
+        from .long_horizon_memory_environment import LongHorizonMemoryEnvironment
+    except (ImportError, ModuleNotFoundError):
+        from long_horizon_memory.models import LongHorizonMemoryAction, LongHorizonMemoryObservation
+        from long_horizon_memory.server.long_horizon_memory_environment import LongHorizonMemoryEnvironment
 
 
 # Create the app with web interface and README integration

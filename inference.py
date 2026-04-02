@@ -9,11 +9,15 @@ from typing import List, Optional, Tuple
 from openai import OpenAI
 
 try:
-    from .models import LongHorizonMemoryAction, LongHorizonMemoryObservation
-    from .server.long_horizon_memory_environment import LongHorizonMemoryEnvironment
-except ImportError:
     from models import LongHorizonMemoryAction, LongHorizonMemoryObservation
     from server.long_horizon_memory_environment import LongHorizonMemoryEnvironment
+except (ImportError, ModuleNotFoundError):
+    try:
+        from .models import LongHorizonMemoryAction, LongHorizonMemoryObservation
+        from .server.long_horizon_memory_environment import LongHorizonMemoryEnvironment
+    except (ImportError, ModuleNotFoundError):
+        from long_horizon_memory.models import LongHorizonMemoryAction, LongHorizonMemoryObservation
+        from long_horizon_memory.server.long_horizon_memory_environment import LongHorizonMemoryEnvironment
 
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
