@@ -1,0 +1,49 @@
+# Commands and Steps for Long Horizon Memory Environment Deployment
+
+## 1. Local Environment Preparation
+# Clone the repository
+git clone https://github.com/Kraken-coder/long_horizon_memory.git
+cd long_horizon_memory
+
+# Initial local build attempt (to verify Dockerfile)
+docker build -t long-horizon-memory:latest -f server/Dockerfile .
+
+## 2. Hugging Face Space Setup
+# Clone the HF Space (use your Access Token as password)
+git clone https://huggingface.co/spaces/aditya-ranjan1234/long-horizon-memory-env
+cd long-horizon-memory-env
+
+# Copy files from original project to HF Space folder
+cp -r ../long_horizon_memory/* .
+
+# Move Dockerfile to root (Required for HF Spaces)
+mv server/Dockerfile ./Dockerfile
+
+## 3. Fixing Code and Configuration
+# Apply import fixes in server/app.py, server/long_horizon_memory_environment.py, and inference.py
+# (Changes included using absolute imports instead of relative ones to avoid "ImportError: attempted relative import beyond top-level package")
+
+# Update pyproject.toml to include UI dependencies
+# Added: "jinja2", "aiofiles"
+
+# Update Port and Health Checks (Switching to 7860)
+# Files modified: Dockerfile, README.md, openenv.yaml, server/app.py
+
+## 4. Deployment to Hugging Face
+git add .
+git commit -m "Final deployment fixes: port 7860, health checks, and import fixes"
+git push origin main
+
+## 5. Verification Commands (PowerShell)
+# Check Health
+Invoke-RestMethod -Uri "https://aditya-ranjan1234-long-horizon-memory-env.hf.space/health"
+
+# Check Registered Routes
+Invoke-RestMethod -Uri "https://aditya-ranjan1234-long-horizon-memory-env.hf.space/routes"
+
+# Test Environment Reset
+Invoke-RestMethod -Method Post -Uri "https://aditya-ranjan1234-long-horizon-memory-env.hf.space/reset"
+
+# Test Environment Step (noop action)
+$body = @{ action = @{ operation = "noop" } } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "https://aditya-ranjan1234-long-horizon-memory-env.hf.space/step" -Body $body -ContentType "application/json"

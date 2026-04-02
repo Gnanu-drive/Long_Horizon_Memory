@@ -38,11 +38,11 @@ dev = [
 [project.scripts]
 # Server entry point - enables running via: uv run --project . server
 # or: python -m long_horizon_memory.server.app
-server = "long_horizon_memory.server.app:main"
-random-baseline = "long_horizon_memory.random_baseline:main"
-inference = "long_horizon_memory.inference:main"
+server = "server.app:main"
+random-baseline = "random_baseline:main"
+inference = "inference:main"
 
 [tool.setuptools]
 include-package-data = true
-packages = ["long_horizon_memory", "long_horizon_memory.server"]
-package-dir = { "long_horizon_memory" = ".", "long_horizon_memory.server" = "server" }
+packages = ["server"]
+package-dir = { "" = "." }
