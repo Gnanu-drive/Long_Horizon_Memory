@@ -57,23 +57,25 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Final runtime stage
 FROM ${BASE_IMAGE}
 
+# Use /app as the base directory
 WORKDIR /app
 
 # Copy the virtual environment from builder
 COPY --from=builder /app/env/.venv /app/.venv
 
-# Copy the environment code to /app/long_horizon_memory
-COPY --from=builder /app/env /app/long_horizon_memory
+# Copy the environment code
+COPY --from=builder /app/env /app/project
 
 # Set PATH to use the virtual environment
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Set PYTHONPATH to include the project root
-ENV PYTHONPATH="/app/long_horizon_memory:$PYTHONPATH"
+# Set PYTHONPATH to include the project directory
+ENV PYTHONPATH="/app/project:$PYTHONPATH"
 
 # Health check - use 127.0.0.1 to ensure it's internal
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://127.0.0.1:7860/health || exit 1
 
-# Run the FastAPI server from the project directory
-CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]
+# Run the FastAPI server using python -m to avoid shebang issues with moved venvs
+# Run from the project directory so 'server.app' is findable
+CMD ["python", "-m", "uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]
