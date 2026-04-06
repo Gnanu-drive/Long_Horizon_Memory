@@ -35,6 +35,8 @@ TASKS = ["easy", "medium", "hard"]
 LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
 MAX_MODEL_RETRIES = int(os.getenv("MAX_MODEL_RETRIES", "2"))
 BASELINE_SEED = int(os.getenv("BASELINE_SEED", "1337"))
+SCORE_EPSILON = float(os.getenv("SCORE_EPSILON", "0.001"))
+ENABLE_DEBUG_LOGS = os.getenv("ENABLE_DEBUG_LOGS", "false").lower() == "true"
 
 SYSTEM_PROMPT = """You are an expert memory management system for long-horizon tasks. Your goal is to maintain a high-quality memory buffer by keeping relevant information and discarding noise.
 
@@ -86,40 +88,29 @@ def log_step(
     reward: float,
     done: bool,
     error: Optional[str],
-    metadata: Optional[dict] = None
 ) -> None:
     done_val = str(done).lower()
     error_val = error if error else "null"
 
-    # Enhanced logging with metrics
-    base_log = f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}"
-
-    if metadata:
-        score = metadata.get("task_score", 0.0)
-        correct = metadata.get("correct_in_memory", 0)
-        incorrect = metadata.get("incorrect_in_memory", 0)
-        memory_ages = metadata.get("memory_ages", [])
-        avg_age = metadata.get("avg_memory_age", 0)
-
-        base_log += f" | score={score:.3f} correct={correct} incorrect={incorrect}"
-
-        if memory_ages:
-            base_log += f" mem_ages={memory_ages} avg_age={avg_age:.1f}"
-
-    print(base_log, flush=True)
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        flush=True,
+    )
 
 
-def log_end(success: bool, steps: int, rewards: List[float], final_score: Optional[float] = None) -> None:
+def _strict_score(score: float) -> float:
+    """Clamp score to strict open interval (0, 1) for competition compliance."""
+    eps = min(max(SCORE_EPSILON, 1e-9), 0.49)
+    return min(max(score, eps), 1.0 - eps)
+
+
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     success_val = str(success).lower()
-    avg_reward = sum(rewards) / len(rewards) if rewards else 0.0
     rewards_text = ",".join(f"{r:.2f}" for r in rewards)
-
-    log_msg = f"[END] success={success_val} steps={steps}"
-    if final_score is not None:
-        log_msg += f" final_score={final_score:.3f}"
-    log_msg += f" avg_reward={avg_reward:.3f} rewards={rewards_text}"
-
-    print(log_msg, flush=True)
+    print(
+        f"[END] success={success_val} steps={steps} score={score:.3f} rewards={rewards_text}",
+        flush=True,
+    )
 
 
 def _heuristic_action(observation: LongHorizonMemoryObservation) -> LongHorizonMemoryAction:
@@ -248,13 +239,16 @@ Output your decision as JSON only."""
                 timeout=LLM_TIMEOUT_SECONDS,
             )
             content = completion.choices[0].message.content or "{}"
-            print(f"[LLM] Using {MODEL_NAME} (attempt {attempt + 1})", flush=True)
+            if ENABLE_DEBUG_LOGS:
+                print(f"[LLM] Using {MODEL_NAME} (attempt {attempt + 1})", flush=True)
             return _parse_action(content.strip(), observation)
         except Exception as exc:
             last_error = exc
-            print(f"[LLM] API call failed (attempt {attempt + 1}): {str(exc)[:100]}", flush=True)
+            if ENABLE_DEBUG_LOGS:
+                print(f"[LLM] API call failed (attempt {attempt + 1}): {str(exc)[:100]}", flush=True)
 
-    print(f"[LLM] All retries exhausted, using heuristic fallback", flush=True)
+    if ENABLE_DEBUG_LOGS:
+        print(f"[LLM] All retries exhausted, using heuristic fallback", flush=True)
     return _heuristic_action(observation)
 
 
@@ -288,27 +282,30 @@ def run_task(task_name: str, llm: OpenAI) -> Tuple[bool, List[float]]:
             error = observation.metadata.get("last_action_error")
 
             rewards.append(reward)
-            log_step(step, action_to_text(action), reward, done, error, observation.metadata)
+            log_step(step, action_to_text(action), reward, done, error)
 
             if done:
-                score = float(observation.metadata.get("task_score", 0.0))
+                raw_score = float(observation.metadata.get("task_score", 0.0))
+                score = _strict_score(raw_score)
                 success = score >= SUCCESS_SCORE_THRESHOLD
                 break
 
         if not bool(observation.done):
-            score = float(observation.metadata.get("task_score", 0.0))
+            raw_score = float(observation.metadata.get("task_score", 0.0))
+            score = _strict_score(raw_score)
             success = score >= SUCCESS_SCORE_THRESHOLD
     except Exception as exc:
         log_step(step_count + 1, "noop", 0.0, True, str(exc))
         success = False
     finally:
-        final_score = float(observation.metadata.get("task_score", 0.0)) if observation else 0.0
+        raw_final_score = float(observation.metadata.get("task_score", 0.0)) if observation else 0.0
+        final_score = _strict_score(raw_final_score)
         if hasattr(env, "close"):
             try:
                 env.close()
             except Exception:
                 pass
-        log_end(success, len(rewards), rewards, final_score)
+        log_end(success, len(rewards), final_score, rewards)
 
     return success, rewards
 
@@ -325,7 +322,8 @@ def main() -> None:
     if run_all_episodes:
         # Run each specific episode ID (will be 1-24 after we add new episodes)
         # For now start with 1-9, will expand to 24
-        print(f"[INFO] Running all episodes individually", flush=True)
+        if ENABLE_DEBUG_LOGS:
+            print(f"[INFO] Running all episodes individually", flush=True)
 
         total_success = 0
         all_scores = []
@@ -350,7 +348,8 @@ def main() -> None:
                     if episode:
                         difficulty = episode.get("difficulty", "unknown")
                         domain = episode.get("conversation_domain", "unknown")
-                        print(f"\n[EPISODE] id={ep_id} difficulty={difficulty} domain={domain}", flush=True)
+                        if ENABLE_DEBUG_LOGS:
+                            print(f"\n[EPISODE] id={ep_id} difficulty={difficulty} domain={domain}", flush=True)
             except Exception:
                 pass
 
@@ -371,30 +370,33 @@ def main() -> None:
                     error = observation.metadata.get("last_action_error")
 
                     rewards.append(reward)
-                    log_step(step, action_to_text(action), reward, done, error, observation.metadata)
+                    log_step(step, action_to_text(action), reward, done, error)
 
                     if done:
-                        score = float(observation.metadata.get("task_score", 0.0))
+                        raw_score = float(observation.metadata.get("task_score", 0.0))
+                        score = _strict_score(raw_score)
                         success = score >= SUCCESS_SCORE_THRESHOLD
                         all_scores.append(score)
                         break
 
                 if not bool(observation.done):
-                    score = float(observation.metadata.get("task_score", 0.0))
+                    raw_score = float(observation.metadata.get("task_score", 0.0))
+                    score = _strict_score(raw_score)
                     success = score >= SUCCESS_SCORE_THRESHOLD
                     all_scores.append(score)
             except Exception as exc:
                 log_step(len(rewards) + 1, "noop", 0.0, True, str(exc))
                 success = False
-                all_scores.append(0.0)
+                all_scores.append(_strict_score(0.0))
             finally:
-                final_score = float(observation.metadata.get("task_score", 0.0)) if observation else 0.0
+                raw_final_score = float(observation.metadata.get("task_score", 0.0)) if observation else 0.0
+                final_score = _strict_score(raw_final_score)
                 if hasattr(env, "close"):
                     try:
                         env.close()
                     except Exception:
                         pass
-                log_end(success, len(rewards), rewards, final_score)
+                log_end(success, len(rewards), final_score, rewards)
 
             if success:
                 total_success += 1
@@ -402,7 +404,8 @@ def main() -> None:
         # Print summary
         success_rate = (total_success / max_episode_id) * 100 if max_episode_id > 0 else 0
         avg_final_reward = sum(all_scores) / len(all_scores) if all_scores else 0.0
-        print(f"\n[SUMMARY] Total: {max_episode_id} episodes | Success: {total_success} ({success_rate:.1f}%) | Avg Final Reward: {avg_final_reward:.3f}", flush=True)
+        if ENABLE_DEBUG_LOGS:
+            print(f"\n[SUMMARY] Total: {max_episode_id} episodes | Success: {total_success} ({success_rate:.1f}%) | Avg Final Reward: {avg_final_reward:.3f}", flush=True)
     else:
         # Original behavior: run easy, medium, hard tasks
         for task in TASKS:
