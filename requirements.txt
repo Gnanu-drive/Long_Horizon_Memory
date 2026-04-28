@@ -11,3 +11,7 @@ gradio
 python-dotenv
 requests
 pydantic>=2.0.0
+
+# Gemini inference and visualization
+google-genai>=1.0.0
+matplotlib>=3.7.0
